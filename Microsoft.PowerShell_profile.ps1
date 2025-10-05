@@ -1,25 +1,10 @@
 ### PowerShell Profile
-### Version 1.04 - Refactored
 
-$debug = $false
 
 # Define the path to the file that stores the last execution time
 $timeFilePath = [Environment]::GetFolderPath("MyDocuments") + "\PowerShell\LastExecutionTime.txt"
 
-# Define the update interval in days, set to -1 to always check
 $updateInterval = 1000000
-
-# Define the path to the file that stores the last execution time
-if ($timeFilePath_Override){
-    $timeFilePath = $timeFilePath_Override
-} else {
-    $timeFilePath = "$env:USERPROFILE\Documents\PowerShell\LastExecutionTime.txt"
-}
-
-# opt-out of telemetry before doing anything, only if PowerShell is run as admin
-# if ([bool]([System.Security.Principal.WindowsIdentity]::GetCurrent()).IsSystem) {
-#     [System.Environment]::SetEnvironmentVariable('POWERSHELL_TELEMETRY_OPTOUT', 'true', [System.EnvironmentVariableTarget]::Machine)
-# }
 
 # Initial GitHub.com connectivity check with 1 second timeout
 $global:canConnectToGitHub = Test-Connection github.com -Count 1 -Quiet -TimeoutSeconds 1
@@ -150,10 +135,6 @@ Set-PSReadLineOption @PSReadLineOptions
 Set-PSReadLineKeyHandler -Key UpArrow -Function HistorySearchBackward
 Set-PSReadLineKeyHandler -Key DownArrow -Function HistorySearchForward
 Set-PSReadLineKeyHandler -Key Tab -Function MenuComplete
-# Set-PSReadLineKeyHandler -Chord 'Ctrl+d' -Function DeleteChar
-# Set-PSReadLineKeyHandler -Chord 'Ctrl+w' -Function BackwardDeleteWord
-# Set-PSReadLineKeyHandler -Chord 'Alt+d' -Function DeleteWord
-# Set-PSReadLineKeyHandler -Chord 'Ctrl+LeftArrow' -Function BackwardWord
 Set-PSReadLineKeyHandler -Chord 'Ctrl+RightArrow' -Function ForwardWord
 Set-PSReadLineKeyHandler -Chord 'Ctrl+z' -Function Undo
 Set-PSReadLineKeyHandler -Chord 'Ctrl+y' -Function Redo
@@ -187,5 +168,3 @@ $scriptblock = {
 Register-ArgumentCompleter -Native -CommandName dotnet -ScriptBlock $scriptblock
 
 oh-my-posh init pwsh --config https://raw.githubusercontent.com/JanDeDobbeleer/oh-my-posh/main/themes/cobalt2.omp.json | Invoke-Expression
-
-# Write-Host "$($PSStyle.Foreground.Yellow)Use 'Show-Help' to display help$($PSStyle.Reset)"
