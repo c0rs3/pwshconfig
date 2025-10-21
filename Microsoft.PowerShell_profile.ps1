@@ -1,19 +1,13 @@
 ### PowerShell Profile
 
-
 # Define the path to the file that stores the last execution time
 $timeFilePath = [Environment]::GetFolderPath("MyDocuments") + "\PowerShell\LastExecutionTime.txt"
 
-$updateInterval = 1000000
-
-# Initial GitHub.com connectivity check with 1 second timeout
-$global:canConnectToGitHub = Test-Connection github.com -Count 1 -Quiet -TimeoutSeconds 1
-
 # Import Modules and External Profiles
 # Ensure Terminal-Icons module is installed before importing
-if (-not (Get-Module -ListAvailable -Name Terminal-Icons)) {
-    Install-Module -Name Terminal-Icons -Scope CurrentUser -Force -SkipPublisherCheck
-}
+# if (-not (Get-Module -ListAvailable -Name Terminal-Icons)) {
+#     Install-Module -Name Terminal-Icons -Scope CurrentUser -Force -SkipPublisherCheck
+# }
 
 Import-Module -Name Terminal-Icons
 $ChocolateyProfile = "$env:ChocolateyInstall\helpers\chocolateyProfile.psm1"
@@ -54,8 +48,23 @@ function Wipe-PSHistory {
 # Admin Check and Prompt Customization
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 function prompt {
-    if ($isAdmin) { "[" + (Get-Location) + "] # " } else { "[" + (Get-Location) + "] $ " }
+    $path = (Get-Location).Path -replace '\\','/'     # normalize slashes
+
+    # Remove drive prefix like C:
+    $path = $path -replace '^[A-Za-z]:',''
+
+    # Replace home directory with ~
+    $homeUnix = $HOME -replace '\\','/' -replace '^[A-Za-z]:',''
+    if ($path -like "$homeUnix*") {
+        $path = $path -replace [regex]::Escape($homeUnix), '~'
+    }
+
+    # Print with colors
+    Write-Host $path -NoNewline -ForegroundColor Cyan
+    Write-Host " $" -NoNewline -ForegroundColor Yellow
+    return " "
 }
+
 $adminSuffix = if ($isAdmin) { " [ADMIN]" } else { "" }
 $Host.UI.RawUI.WindowTitle = "PowerShell {0}$adminSuffix" -f $PSVersionTable.PSVersion.ToString()
 
@@ -73,6 +82,10 @@ function winutildev {
 
 function y {
     yazi
+}
+
+function q {
+    exit
 }
 
 function admin {
@@ -135,7 +148,6 @@ Set-PSReadLineOption @PSReadLineOptions
 Set-PSReadLineKeyHandler -Key UpArrow -Function HistorySearchBackward
 Set-PSReadLineKeyHandler -Key DownArrow -Function HistorySearchForward
 Set-PSReadLineKeyHandler -Key Tab -Function MenuComplete
-Set-PSReadLineKeyHandler -Chord 'Ctrl+RightArrow' -Function ForwardWord
 Set-PSReadLineKeyHandler -Chord 'Ctrl+z' -Function Undo
 Set-PSReadLineKeyHandler -Chord 'Ctrl+y' -Function Redo
 
@@ -156,7 +168,7 @@ function Set-PredictionSource {
 }
 Set-PredictionSource
 
-Register-ArgumentCompleter -Native -CommandName git, npm, deno -ScriptBlock $scriptblock
+Register-ArgumentCompleter -Native -CommandName deno -ScriptBlock $scriptblock
 
 $scriptblock = {
     param($wordToComplete, $commandAst, $cursorPosition)
@@ -167,4 +179,4 @@ $scriptblock = {
 }
 Register-ArgumentCompleter -Native -CommandName dotnet -ScriptBlock $scriptblock
 
-oh-my-posh init pwsh --config https://raw.githubusercontent.com/JanDeDobbeleer/oh-my-posh/main/themes/cobalt2.omp.json | Invoke-Expression
+# oh-my-posh init pwsh --config https://raw.githubusercontent.com/JanDeDobbeleer/oh-my-posh/main/themes/cobalt2.omp.json | Invoke-Expression
