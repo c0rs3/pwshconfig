@@ -1,19 +1,5 @@
 ### PowerShell Profile
-
-# Define the path to the file that stores the last execution time
 $timeFilePath = [Environment]::GetFolderPath("MyDocuments") + "\PowerShell\LastExecutionTime.txt"
-
-# Import Modules and External Profiles
-# Ensure Terminal-Icons module is installed before importing
-# if (-not (Get-Module -ListAvailable -Name Terminal-Icons)) {
-#     Install-Module -Name Terminal-Icons -Scope CurrentUser -Force -SkipPublisherCheck
-# }
-
-Import-Module -Name Terminal-Icons
-$ChocolateyProfile = "$env:ChocolateyInstall\helpers\chocolateyProfile.psm1"
-if (Test-Path($ChocolateyProfile)) {
-    Import-Module "$ChocolateyProfile"
-}
 
 function Clear-Cache {
     if (Get-Command -Name "Clear-Cache_Override" -ErrorAction SilentlyContinue) {
@@ -34,32 +20,26 @@ function Clear-PSHistory {
 }
 
 function Wipe-PSHistory {
-    # PSReadLine history path
     $historyFile = (Get-PSReadLineOption).HistorySavePath
     if (Test-Path $historyFile) {
         Remove-Item $historyFile -Force
         Write-Host "History file deleted: $historyFile" -Foreground Yellow
     }
-    # also clear memory
     [Microsoft.PowerShell.PSConsoleReadLine]::ClearHistory()
     Write-Host "History completely wiped (disk + memory)." -Foreground Green
 }
 
-# Admin Check and Prompt Customization
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 function prompt {
     $path = (Get-Location).Path -replace '\\','/'     # normalize slashes
 
-    # Remove drive prefix like C:
     $path = $path -replace '^[A-Za-z]:',''
 
-    # Replace home directory with ~
     $homeUnix = $HOME -replace '\\','/' -replace '^[A-Za-z]:',''
     if ($path -like "$homeUnix*") {
         $path = $path -replace [regex]::Escape($homeUnix), '~'
     }
 
-    # Print with colors
     Write-Host $path -NoNewline -ForegroundColor Cyan
     Write-Host " $" -NoNewline -ForegroundColor Yellow
     return " "
@@ -73,10 +53,18 @@ function winutil {
 }
 
 function winutildev {
-    if (Get-Command -Name "WinUtilDev_Override" -ErrorAction SilentlyContinue) {
-        WinUtilDev_Override
-    } else {
-        irm https://christitus.com/windev | iex
+    irm https://christitus.com/windev | iex
+}
+
+function reload-profile {
+    & $profile
+}
+
+function where($name) {
+    if ($name){
+        command $name
+    }else{
+        command command
     }
 }
 
@@ -86,6 +74,157 @@ function y {
 
 function q {
     exit
+}
+
+function Repair-WindowsSystem {
+    <#
+    .SYNOPSIS
+    Comprehensive Windows 11 system repair function
+    
+    .DESCRIPTION
+    Runs multiple system repair utilities including:
+    - SFC (System File Checker)
+    - DISM (Deployment Image Servicing and Management)
+    - Windows Update component repair
+    - Disk error checking
+    - System health monitoring
+    .EXAMPLE
+    Repair-WindowsSystem
+    #>
+    
+    # Require administrator privileges
+    if (-NOT ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
+        Write-Error "This function requires Administrator privileges. Please run PowerShell as Administrator."
+        return
+    }
+
+    Write-Host "Starting comprehensive system repair..." -ForegroundColor Cyan
+
+    # 1. System File Checker (SFC)
+    Write-Host "`n1. Running System File Checker (SFC)..." -ForegroundColor Yellow
+    $sfcResult = Repair-WindowsCorruption -SFCFix
+    if ($sfcResult -eq 0) {
+        Write-Host "SFC completed successfully" -ForegroundColor Green
+    } else {
+        Write-Host "SFC found and repaired corruption" -ForegroundColor Green
+    }
+
+    # 2. DISM Health Checks
+    Write-Host "`n2. Running DISM Health Restoration..." -ForegroundColor Yellow
+    $dismResults = @()
+    
+    Write-Host "   - Checking component store health..." -ForegroundColor Gray
+    $dismResults += Repair-WindowsCorruption -DISMCheckHealth
+    
+    Write-Host "   - Scanning for corruption..." -ForegroundColor Gray
+    $dismResults += Repair-WindowsCorruption -DISMScanHealth
+    
+    Write-Host "   - Restoring system health..." -ForegroundColor Gray
+    $dismResults += Repair-WindowsCorruption -DISMRestoreHealth
+    
+    if ($dismResults -contains 0) {
+        Write-Host "DISM operations completed successfully" -ForegroundColor Green
+    }
+
+    # 3. Windows Update Component Reset
+    Write-Host "`n3. Repairing Windows Update components..." -ForegroundColor Yellow
+    try {
+        # Stop Windows Update services
+        Get-Service -Name wuauserv, bits, cryptsvc | Stop-Service -Force
+        
+        # Rename SoftwareDistribution and Catroot2 folders
+        Rename-Item "$env:systemroot\SoftwareDistribution" "SoftwareDistribution.old" -Force -ErrorAction SilentlyContinue
+        Rename-Item "$env:systemroot\System32\catroot2" "catroot2.old" -Force -ErrorAction SilentlyContinue
+        
+        # Restart services
+        Get-Service -Name wuauserv, bits, cryptsvc | Start-Service
+        
+        Write-Host "Windows Update components reset successfully" -ForegroundColor Green
+    }
+    catch {
+        Write-Warning "Windows Update repair partially completed. Some operations require reboot."
+    }
+
+    # 4. Disk Error Checking
+    Write-Host "`n4. Checking disk for errors..." -ForegroundColor Yellow
+    $volumes = Get-Volume | Where-Object {$_.DriveType -eq 'Fixed' -and $_.DriveLetter}
+    foreach ($volume in $volumes) {
+        Write-Host "   - Checking volume $($volume.DriveLetter):" -ForegroundColor Gray
+        $result = Repair-Volume -DriveLetter $volume.DriveLetter -Scan -ErrorAction SilentlyContinue
+        if ($result) {
+            Write-Host "     No errors found" -ForegroundColor Green
+        } else {
+            Write-Host "     Errors found. Running repair..." -ForegroundColor Yellow
+            Repair-Volume -DriveLetter $volume.DriveLetter -OfflineScanAndFix -ErrorAction SilentlyContinue
+        }
+    }
+
+    # 5. System Health Report
+    Write-Host "`n5. Generating system health report..." -ForegroundColor Yellow
+    Get-CimInstance -ClassName Win32_ComputerSystem | 
+        Select-Object Name, Manufacturer, Model | 
+        Format-List
+
+    # 6. Final Recommendations
+    Write-Host "`nRepair operations completed!" -ForegroundColor Cyan
+    Write-Host "Recommended actions:" -ForegroundColor White
+    Write-Host "• Restart your computer to complete any pending repairs" -ForegroundColor Gray
+    Write-Host "• Run Windows Update to check for updates" -ForegroundColor Gray
+    Write-Host "• Monitor system performance for improvements" -ForegroundColor Gray
+
+    # Optional: Open system health dashboard
+    $openHealth = Read-Host "`nOpen system health report? (y/n)"
+    if ($openHealth -eq 'y') {
+        perfmon /report
+    }
+}
+
+# Helper function for corruption repair
+function Repair-WindowsCorruption {
+    param(
+        [switch]$SFCFix,
+        [switch]$DISMCheckHealth,
+        [switch]$DISMScanHealth,
+        [switch]$DISMRestoreHealth
+    )
+    
+    if ($SFCFix) {
+        sfc /scannow
+        return $LASTEXITCODE
+    }
+    
+    if ($DISMCheckHealth) {
+        dism /online /check-health
+        return $LASTEXITCODE
+    }
+    
+    if ($DISMScanHealth) {
+        dism /online /scan-health
+        return $LASTEXITCODE
+    }
+    
+    if ($DISMRestoreHealth) {
+        dism /online /cleanup-image /restorehealth
+        return $LASTEXITCODE
+    }
+}
+
+function restart {
+    do {
+        $choice = Read-Host "`nDo you want to restart now? (y/n)"
+        switch ($choice.ToLower()) {
+            'y' { 
+                Write-Host "Initiating system restart..." -ForegroundColor Yellow
+                Restart-Computer -Force
+                break
+            }
+            'n' { 
+                Write-Host "Alright go kys"
+                break
+            }
+            default { Write-Host "Please enter 'y' or 'n'" }
+        }
+    } while ($choice -notin 'y','n')
 }
 
 function admin {
@@ -109,18 +248,6 @@ function admin {
 }
 
 Set-Alias -Name sudo -Value admin
-
-function reload-profile {
-    & $profile
-}
-
-function which($name) {
-    if ($name){
-        Get-Command $name | Select-Object -ExpandProperty Definition
-    }else{
-        Write-Host "Say something retard" -Foreground Green
-    }
-}
 
 $PSReadLineOptions = @{
     EditMode = 'Windows'
@@ -177,6 +304,5 @@ $scriptblock = {
             [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
         }
 }
-Register-ArgumentCompleter -Native -CommandName dotnet -ScriptBlock $scriptblock
 
-# oh-my-posh init pwsh --config https://raw.githubusercontent.com/JanDeDobbeleer/oh-my-posh/main/themes/cobalt2.omp.json | Invoke-Expression
+Register-ArgumentCompleter -Native -CommandName dotnet -ScriptBlock $scriptblock
